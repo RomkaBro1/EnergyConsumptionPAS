@@ -18,6 +18,15 @@ from .calendar import api_calendar
 from .storage import atomic_write, digest, now
 
 
+def weather_watermark(existing, field, cfg):
+    start = pd.Timestamp(cfg["history_start"], tz="Europe/Berlin").tz_convert("UTC")
+    if not existing.empty and field in existing:
+        known = existing.loc[existing[field].notna()]
+        if not known.empty:
+            start = max(start, pd.to_datetime(known.timestamp_utc, utc=True).max() - pd.Timedelta(days=cfg["overlap_days"]))
+    return start
+
+
 class Downloader:
     def __init__(self, store, cfg, run_id):
         self.store, self.cfg, self.run_id = store, cfg, run_id
@@ -124,14 +133,13 @@ def refresh(store, cfg, run_id, progress=lambda message: None):
         mapping = BASE / "stations.csv"
     selected = pd.read_csv(mapping, dtype={"station_id": str})
     weather_existing = store.frame("weather")
-    weather_start = pd.Timestamp(cfg["history_start"], tz="Europe/Berlin").tz_convert("UTC")
-    if not weather_existing.empty:
-        weather_start = pd.to_datetime(weather_existing.timestamp_utc, utc=True).max() - pd.Timedelta(days=cfg["overlap_days"])
     summaries = []
     for variable, field in (("temperature", "temperature_c"), ("wind", "wind_speed_ms"), ("solar", "solar_energy_wh_m2")):
+        # Separate watermarks are essential: solar archives may arrive a month later.
+        weather_start = weather_watermark(weather_existing, field, cfg)
         spec = p.VARIABLES[variable]
         dirs = [p.CDC + spec["folder"] + "/"] if variable == "solar" else [p.CDC + spec["folder"] + "/recent/"]
-        if variable != "solar" and weather_existing.empty:
+        if variable != "solar" and (weather_existing.empty or weather_start < end - pd.Timedelta(days=365)):
             dirs.insert(0, p.CDC + spec["folder"] + "/historical/")
         rows = []
         for directory in dirs:

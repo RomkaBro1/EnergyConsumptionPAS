@@ -1,0 +1,45 @@
+flowchart TB
+  subgraph Sources[Открытые источники]
+    E[Energy-Charts: JSON / Load]
+    D[DWD CDC: ZIP / CSV]
+    M[DWD MOSMIX: KMZ / XML]
+    C[Feiertage: JSON]
+    H[python-holidays: версионированные правила]
+  end
+  subgraph Ingestion[Загрузка]
+    S[Расписание / кнопка / CLI]
+    N[HTTP: TLS, TTL, ETag, Retry-After]
+    B[Bronze: ответы + SHA-256 + метаданные]
+    P[Парсеры: схема, типы, единицы, ключи]
+    Q[Карантин неуспешных загрузок]
+  end
+  E & D & M & C --> N
+  S --> N
+  N --> B --> P
+  N & P --> Q
+  subgraph Storage[Хранение]
+    DB[Silver / SQLite: нормализованные записи]
+    V[История исправлений]
+    G[Gold: часовая витрина UTC]
+    K[Проверки качества]
+  end
+  P --> DB --> V
+  DB & H --> G --> K
+  subgraph Forecast[Прогнозирование]
+    F[Календарь Berlin + лаги + погода]
+    A[Недельный профиль]
+    X[Градиентный бустинг]
+    T[Временная проверка: обучение / калибровка / тест]
+    R[Версии моделей, метрики, интервалы, прогнозы]
+  end
+  G --> F --> A & X --> T --> R
+  subgraph Service[Локальный сайт]
+    API[Flask API · 127.0.0.1:8050]
+    UI[Предметный дашборд]
+    OP[Операционный дашборд]
+    CSV[Экспорт CSV]
+  end
+  R & G --> API --> UI & CSV
+  J[SQLite: журнал запусков и событий]
+  N & P & T --> J
+  J & K & V --> API --> OP

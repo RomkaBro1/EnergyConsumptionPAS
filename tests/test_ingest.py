@@ -5,9 +5,10 @@ import unittest
 import urllib.error
 from pathlib import Path
 from unittest.mock import patch
+import pandas as pd
 
 from gridpulse.config import load_config
-from gridpulse.ingest import Downloader
+from gridpulse.ingest import Downloader, weather_watermark
 from gridpulse.storage import Store
 
 
@@ -36,6 +37,12 @@ class DownloadTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_delayed_solar_publication_uses_its_own_watermark(self):
+        observations = pd.DataFrame({"timestamp_utc": ["2026-08-31T23:00Z", "2026-09-29T23:00Z"],
+                                     "temperature_c": [15., 10.], "solar_energy_wh_m2": [30., None]})
+        self.assertEqual(weather_watermark(observations, "solar_energy_wh_m2", self.cfg), pd.Timestamp("2026-08-24T23:00Z"))
+        self.assertEqual(weather_watermark(observations, "temperature_c", self.cfg), pd.Timestamp("2026-09-22T23:00Z"))
 
     @patch("gridpulse.ingest.time.sleep")
     @patch("gridpulse.ingest.urllib.request.urlopen")

@@ -154,7 +154,10 @@ def create_app(cfg, initialize=False):
     def operations():
         s = engine.store
         quality = s.query("SELECT * FROM quality WHERE run_id=(SELECT run_id FROM quality ORDER BY id DESC LIMIT 1)")
-        datasets = s.query("SELECT dataset,COUNT(*) AS rows,MAX(updated_at) AS updated_at FROM records GROUP BY dataset")
+        datasets = s.query("""SELECT dataset,COUNT(*) AS rows,MAX(updated_at) AS updated_at,
+            MAX(COALESCE(json_extract(payload,'$.timestamp_utc'),json_extract(payload,'$.valid_time_utc'),
+                         json_extract(payload,'$.date_local'))) AS latest_observation
+            FROM records GROUP BY dataset""")
         return jsonify(quality=quality, datasets=datasets,
             runs=s.query("SELECT * FROM runs ORDER BY started_at DESC LIMIT 30"),
             journal=s.query("SELECT * FROM journal ORDER BY id DESC LIMIT 80"),
