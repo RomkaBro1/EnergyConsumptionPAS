@@ -1,0 +1,16 @@
+{
+  "host": "127.0.0.1",
+  "port": 8050,
+  "data_dir": "runtime",
+  "import_dir": "data_germany_energy",
+  "history_start": "2021-01-01",
+  "train_days": 1095,
+  "validation_days": 28,
+  "refresh_minutes": 360,
+  "http_timeout": 45,
+  "http_attempts": 3,
+  "energy_request_gap": 31,
+  "overlap_days": 7,
+  "random_seed": 42,
+  "custom_ca_file": ""
+}

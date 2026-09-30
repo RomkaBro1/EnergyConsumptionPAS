@@ -1,0 +1,22 @@
+﻿station_id,from_date,to_date,height_m,lat,lon,name_and_state,distance_km,variable,city
+00433,19510101,20260929,48.0,52.4676,13.402,Berlin-Tempelhof                         Berlin                                   Frei,5.830152914340935,temperature,Berlin
+01975,19490101,20260929,11.0,53.6332,9.9881,Hamburg-Fuhlsbüttel                      Hamburg                                  Frei,9.148513359600349,temperature,Hamburg
+01424,20080801,20260929,121.0,50.1269,8.6694,Frankfurt/Main-Westend                   Hessen                                   Frei,2.082888153754588,temperature,Frankfurt
+02667,19600101,20260929,91.0,50.8645,7.1575,Köln/Bonn                                Nordrhein-Westfalen                      Frei,16.08149640535364,temperature,Cologne
+04928,19770701,20260929,314.0,48.8281,9.2,Stuttgart (Schnarrenberg)                Baden-Württemberg                        Frei,6.049837634614312,temperature,Stuttgart
+02928,19510101,20260929,138.0,51.3151,12.4462,Leipzig-Holzhausen                       Sachsen                                  Frei,5.669217487820642,temperature,Leipzig
+03379,19970701,20260929,515.0,48.1632,11.5429,München-Stadt                            Bayern                                   Frei,3.8101587754475505,temperature,Munich
+00433,19740101,20260929,48.0,52.4676,13.402,Berlin-Tempelhof                         Berlin                                   Frei,5.830152914340935,wind,Berlin
+01975,19500101,20260929,11.0,53.6332,9.9881,Hamburg-Fuhlsbüttel                      Hamburg                                  Frei,9.148513359600349,wind,Hamburg
+07341,20050801,20260929,119.0,50.09,8.7862,Offenbach-Wetterpark                     Hessen                                   Frei,7.757755227266705,wind,Frankfurt
+02667,19570701,20260929,91.0,50.8645,7.1575,Köln/Bonn                                Nordrhein-Westfalen                      Frei,16.08149640535364,wind,Cologne
+04928,19760901,20260929,314.0,48.8281,9.2,Stuttgart (Schnarrenberg)                Baden-Württemberg                        Frei,6.049837634614312,wind,Stuttgart
+02928,19580101,20260929,138.0,51.3151,12.4462,Leipzig-Holzhausen                       Sachsen                                  Frei,5.669217487820642,wind,Leipzig
+03379,19850101,20260929,515.0,48.1632,11.5429,München-Stadt                            Bayern                                   Frei,3.8101587754475505,wind,Munich
+03987,19451231,20260831,81.0,52.3812,13.0622,Potsdam                                  Brandenburg,27.89018038088277,solar,Berlin
+01975,20050101,20260831,11.0,53.6332,9.9881,Hamburg-Fuhlsbüttel                      Hamburg,9.148513359600349,solar,Hamburg
+05906,19790101,20260831,98.0,49.5063,8.5584,Mannheim                                 Baden-Württemberg,67.71176323303514,solar,Frankfurt
+07365,20090101,20260831,180.0,51.4458,7.2628,Bochum (Ruhruniversität)                 Nordrhein-Westfalen,60.278700093778546,solar,Cologne
+04928,19790101,20260831,314.0,48.8281,9.2,Stuttgart (Schnarrenberg)                Baden-Württemberg,6.049837634614312,solar,Stuttgart
+02932,20190501,20260831,131.0,51.4347,12.2396,Leipzig/Halle                            Sachsen,14.112456006076807,solar,Leipzig
+05404,19610101,20260831,477.0,48.4024,11.6946,Weihenstephan-Dürnast                    Bayern,30.788974579552026,solar,Munich

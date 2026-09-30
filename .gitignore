@@ -1,0 +1,11 @@
+# Reproducible code belongs in git; downloaded data and trained artifacts do not.
+data_germany_energy/
+runtime/
+.venv/
+.packages/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+*.log
+test-results/
