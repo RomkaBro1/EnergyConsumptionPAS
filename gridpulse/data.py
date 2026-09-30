@@ -77,7 +77,10 @@ def build_mart(store, cfg, run_id):
         pct = f[col].notna().mean() * 100
         check("Полнота " + col + ", %", pct, pct > 95, "Пропуски сохраняются; модель обрабатывает их отдельно")
     check("Связность календаря, %", f.calendar_source.notna().mean() * 100, f.calendar_source.notna().all(), "Каждому локальному дню соответствует запись календаря")
-    age = (pd.Timestamp.now(tz="UTC") - f.load_mean_mw.last_valid_index()).total_seconds() / 3600
+    last_valid = f.load_mean_mw.last_valid_index()
+    if last_valid is None:
+        raise ValueError("После контроля качества не осталось допустимых полных часов нагрузки")
+    age = (pd.Timestamp.now(tz="UTC") - last_valid).total_seconds() / 3600
     check("Возраст последнего факта, ч", age, age < 48, "Предупреждение после 48 часов; ранее полученная история остаётся доступной")
     store.save_quality(run_id, checks)
     atomic_write(store.root / "gold/hourly.csv", f.reset_index().to_csv(index=False).encode("utf-8-sig"))

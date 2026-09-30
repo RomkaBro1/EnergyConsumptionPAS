@@ -162,6 +162,7 @@ def train(store, cfg, frame, run_id, progress=lambda msg: None):
     report["model_sha256"] = sha
     report["production_train_end"] = str(f.index.max())
     report["training_rows"] = int(eligible.sum())
+    report["train_days"] = cfg["train_days"]
     report["input_sha256"] = digest((store.root / "gold/hourly.csv").read_bytes())
     atomic_write(store.root / "models" / (sha + ".pkl"), model_bytes)
     atomic_write(store.root / "models/latest.json", json.dumps(report, ensure_ascii=False, indent=2).encode())
@@ -178,7 +179,7 @@ def predict(store, frame, hours=24, model_name="boosting", temperature_delta=0, 
     if digest(raw) != report["model_sha256"]:
         raise ValueError("Контрольная сумма модели не совпала; переобучите модель")
     bundle = pickle.loads(raw)  # Only local artifacts created by train(); never uploaded by users.
-    history = frame.loc[frame.index < as_of]
+    history = frame.loc[frame.index < as_of].tail(report.get("train_days", 1095) * 24)
     idx = pd.date_range(as_of.ceil("h"), periods=hours, freq="h")
     cal = pd.read_csv(store.root / "gold/calendar.csv")
     weather = weather_for(history, idx, store.frame("weather_forecast"), as_of)
@@ -199,6 +200,8 @@ def predict(store, frame, hours=24, model_name="boosting", temperature_delta=0, 
     output.index.name = "timestamp_utc"
     latest = history.load_mean_mw.last_valid_index()
     warnings = []
+    if latest > pd.Timestamp(report["production_train_end"]):
+        warnings.append("Данные новее обученной модели. Дождитесь переобучения для согласованной версии прогноза.")
     age = (as_of - latest).total_seconds() / 3600
     if age > 48:
         warnings.append(f"Последнему измерению {age:.0f} ч. Обновите источники; точность может снизиться.")

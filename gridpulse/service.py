@@ -1,6 +1,7 @@
 import io
 import json
 import threading
+import re
 from datetime import datetime
 
 import numpy as np
@@ -209,6 +210,15 @@ def create_app(cfg, initialize=False):
         else:
             return jsonify(error="Неизвестный набор данных"), 404
         return Response(data, mimetype="text/csv; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={kind}.csv"})
+
+    @app.get("/api/raw/<sha>")
+    def raw(sha):
+        if not re.fullmatch(r"[a-f0-9]{64}", sha):
+            raise ValueError("Ожидается SHA-256 исходного ответа")
+        for directory in (engine.store.root / "bronze/objects", cfg["import_dir"] / "raw/objects"):
+            if (directory / sha).is_file():
+                return send_from_directory(directory, sha, as_attachment=True, download_name=sha + ".bin")
+        return jsonify(error="Исходный объект не найден в локальном архиве"), 404
 
     if initialize:
         if not (engine.store.root / "models/latest.json").exists():
