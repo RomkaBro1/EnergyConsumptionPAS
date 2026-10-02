@@ -4,10 +4,10 @@ const $ = id => document.getElementById(id);
 const state = {view: 'overview', hours: 24, days: 2, model: 'boosting', overviewHours: 24, overviewModel: 'boosting', delta: 0, ready: false, busy: false, charts: new Map()};
 const labels = {boosting: 'Градиентный бустинг', seasonal: 'Недельный профиль'};
 const views = {
-  overview: ['МОНИТОРИНГ · ГЕРМАНИЯ', 'Энергия в перспективе', 'Потребление, погода и календарь — в единой картине.', 'Обзор системы'],
-  forecast: ['ПЛАНИРОВАНИЕ · 24–168 ЧАСОВ', 'Спрос завтрашнего дня', 'Оцените будущую нагрузку и проверьте погодный сценарий.', 'Прогноз потребления'],
-  models: ['ВАЛИДАЦИЯ · МЕТРИКИ И ОГРАНИЧЕНИЯ', 'Точность, которую можно проверить', 'Сравнение моделей на данных, не использованных для обучения.', 'Качество моделей'],
-  operations: ['ОПЕРАЦИОННЫЙ ДАШБОРД', 'Данные под контролем', 'Источники, качество и история каждого этапа обработки.', 'Источники и загрузки']
+  overview: ['МОНИТОРИНГ · ГЕРМАНИЯ', 'Мониторинг электропотребления', 'Нагрузка энергосистемы Германии, погода и календарь.', 'Обзор системы'],
+  forecast: ['ПЛАНИРОВАНИЕ · 24–168 ЧАСОВ', 'Прогноз потребления', 'Почасовая нагрузка и погодные сценарии.', 'Прогноз потребления'],
+  models: ['ВАЛИДАЦИЯ · МЕТРИКИ И ОГРАНИЧЕНИЯ', 'Сравнение моделей', 'Результаты проверки на отложенных данных.', 'Качество моделей'],
+  operations: ['ОПЕРАЦИОННЫЙ ДАШБОРД', 'Источники и загрузки', 'Качество данных и журнал обработки.', 'Источники и загрузки']
 };
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v, digits = 1) => v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('ru-RU', {minimumFractionDigits: digits, maximumFractionDigits: digits});
@@ -37,6 +37,10 @@ class Chart {
     const dpr = window.devicePixelRatio || 1; const w = rect.width, h = rect.height;
     this.canvas.width = Math.round(w*dpr); this.canvas.height = Math.round(h*dpr);
     const ctx = this.ctx; ctx.scale(dpr,dpr); ctx.clearRect(0,0,w,h);
+    const theme=getComputedStyle(this.canvas);
+    const gridColor=theme.getPropertyValue('--chart-grid').trim();
+    const textColor=theme.getPropertyValue('--muted').trim();
+    const surfaceColor=theme.getPropertyValue('--panel').trim();
     const pad = {l:43,r:16,t:15,b:33}; const pw = w-pad.l-pad.r, ph = h-pad.t-pad.b;
     const rows = this.rows; if (!rows.length) return;
     const times = rows.map(r => +new Date(r.timestamp_utc));
@@ -49,17 +53,17 @@ class Chart {
     const x = t => pad.l + (t-xmin)/(xmax-xmin || 1)*pw; const y = v => pad.t + (high-v)/(high-low)*ph;
     this.geom = {x,y,pad,pw,ph,w,h,times};
     ctx.font = '10px Segoe UI, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    for (let i=0;i<=4;i++) { const v=low+(high-low)*i/4; const yy=y(v); ctx.strokeStyle='#edf1f4'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke(); ctx.fillStyle='#a1adb6'; ctx.fillText(num(v,0),pad.l-11,yy); }
+    for (let i=0;i<=4;i++) { const v=low+(high-low)*i/4; const yy=y(v); ctx.strokeStyle=gridColor; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad.l,yy); ctx.lineTo(w-pad.r,yy); ctx.stroke(); ctx.fillStyle=textColor; ctx.fillText(num(v,0),pad.l-11,yy); }
     const ticks = w < 600 ? 4 : 7;
-    ctx.textAlign='center'; ctx.fillStyle='#a1adb6';
+    ctx.textAlign='center'; ctx.fillStyle=textColor;
     for(let i=0;i<ticks;i++){ const t=times[Math.round((times.length-1)*i/(ticks-1))]; const format=(xmax-xmin)>5*86400000?{day:'2-digit',month:'2-digit'}:{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}; const text=new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Berlin',...format}).format(t).replace(', ',' · '); ctx.fillText(text,Math.max(45,Math.min(w-42,x(t))),h-13); }
     if(this.options.band){
       const band=rows.filter(r=>r.lower!=null && r.upper!=null);
-      if(band.length){ctx.beginPath();band.forEach((r,i)=>{const xx=x(+new Date(r.timestamp_utc));i?ctx.lineTo(xx,y(r.upper)):ctx.moveTo(xx,y(r.upper));}); [...band].reverse().forEach(r=>ctx.lineTo(x(+new Date(r.timestamp_utc)),y(r.lower))); ctx.closePath();ctx.fillStyle='#7b72d516';ctx.fill();}
+      if(band.length){ctx.beginPath();band.forEach((r,i)=>{const xx=x(+new Date(r.timestamp_utc));i?ctx.lineTo(xx,y(r.upper)):ctx.moveTo(xx,y(r.upper));}); [...band].reverse().forEach(r=>ctx.lineTo(x(+new Date(r.timestamp_utc)),y(r.lower))); ctx.closePath();ctx.fillStyle='#aaa0ed26';ctx.fill();}
     }
     if(this.options.boundary){const xx=x(+new Date(this.options.boundary));if(xx>pad.l&&xx<w-pad.r){ctx.strokeStyle='#cbd4dd';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(xx,pad.t);ctx.lineTo(xx,pad.t+ph);ctx.stroke();ctx.setLineDash([]);ctx.font='9px Segoe UI';ctx.textAlign='left';ctx.fillStyle='#9a94bf';ctx.fillText('ПРОГНОЗ →',xx+8,pad.t+6);}}
     this.series.forEach(s=>{ctx.beginPath();ctx.strokeStyle=s.color;ctx.lineWidth=s.width||2;ctx.setLineDash(s.dash||[]);let previous=null;rows.forEach(r=>{const v=r[s.key],t=+new Date(r.timestamp_utc);if(v==null||!Number.isFinite(v)){previous=null;return;}if(previous==null||t-previous>3700000)ctx.moveTo(x(t),y(v));else ctx.lineTo(x(t),y(v));previous=t;});ctx.stroke();ctx.setLineDash([]);});
-    if(this.hover!=null){const r=rows[this.hover];const xx=x(times[this.hover]);ctx.beginPath();ctx.moveTo(xx,pad.t);ctx.lineTo(xx,pad.t+ph);ctx.strokeStyle='#9babba';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);this.series.forEach(s=>{if(r[s.key]!=null){ctx.beginPath();ctx.arc(xx,y(r[s.key]),3.5,0,2*Math.PI);ctx.fillStyle=s.color;ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=1.5;ctx.stroke();}});}
+    if(this.hover!=null){const r=rows[this.hover];const xx=x(times[this.hover]);ctx.beginPath();ctx.moveTo(xx,pad.t);ctx.lineTo(xx,pad.t+ph);ctx.strokeStyle=textColor;ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);this.series.forEach(s=>{if(r[s.key]!=null){ctx.beginPath();ctx.arc(xx,y(r[s.key]),3.5,0,2*Math.PI);ctx.fillStyle=s.color;ctx.fill();ctx.strokeStyle=surfaceColor;ctx.lineWidth=1.5;ctx.stroke();}});}
   }
   move(event){if(!this.geom)return;const {times,x,w}=this.geom;const px=event.offsetX;let best=0;for(let i=1;i<times.length;i++)if(Math.abs(x(times[i])-px)<Math.abs(x(times[best])-px))best=i;this.hover=best;const r=this.rows[best];this.tooltip.innerHTML=`<div>${esc(fullDate(r.timestamp_utc))}</div>`+this.series.filter(s=>r[s.key]!=null).map(s=>`<div>${esc(s.label)}: <b>${num(r[s.key],2)} ${esc(this.options.unit||'ГВт')}</b></div>`).join('');this.tooltip.classList.remove('hidden');this.tooltip.style.left=`${Math.min(w-this.tooltip.offsetWidth-5,Math.max(0,px+13))}px`;this.tooltip.style.top='9px';this.draw();}
 }
@@ -94,7 +98,7 @@ async function loadOverview(){
     $('kpi-error').innerHTML=`${num(forecast.meta.metrics.mape_pct,2)}<small>%</small>`;
     $('temperature').textContent=`${num(forecast.summary.temperature_mean)} °C`;
     const rows=[...history.data.map(r=>({timestamp_utc:r.timestamp_utc,actual:r.load_mean_mw==null?null:r.load_mean_mw/1000})),...forecastRows(forecast.data)].sort((a,b)=>+new Date(a.timestamp_utc)-+new Date(b.timestamp_utc));
-    new Chart('overview-chart',rows,[{key:'actual',color:'#119e90',label:'Факт'},{key:'prediction',color:'#8272d5',label:'Прогноз',dash:[5,4]}],{band:true,boundary:forecast.data[0].timestamp_utc});
+    new Chart('overview-chart',rows,[{key:'actual',color:'#66c5b6',label:'Факт'},{key:'prediction',color:'#b0a4ee',label:'Прогноз',dash:[5,4]}],{band:true,boundary:forecast.data[0].timestamp_utc});
     new Chart('weather-chart',forecast.data,[{key:'temperature_c',color:'#d7a052',label:'Температура',width:2}],{unit:'°C',negative:true});
     const warnings=forecast.meta.warnings.filter(w=>!w.startsWith('90%'));
     const weatherNote=model==='boosting'?'Температура, ветер и солнечная энергия используются вместе с календарём и историей нагрузки.':'Недельный профиль использует историю нагрузки. Погода показана для справки и не влияет на эту модель.';
@@ -118,7 +122,7 @@ async function loadForecast(){
   $('forecast-export').href='/api/export/forecast?'+query();
   $('scenario-peak').textContent=num(data.summary.peak_mw/1000)+' ГВт';
   $('scenario-energy').textContent=num(data.summary.energy_mwh/1000,0)+' ГВт·ч';
-  new Chart('forecast-chart',forecastRows(data.data),[{key:'baseline',color:'#b8c1cc',label:'Недельный профиль',width:1.5,dash:[4,4]},{key:'prediction',color:'#8173d4',label:'Прогноз'}],{band:true});
+  new Chart('forecast-chart',forecastRows(data.data),[{key:'baseline',color:'#b8c1cc',label:'Недельный профиль',width:1.5,dash:[4,4]},{key:'prediction',color:'#b0a4ee',label:'Прогноз'}],{band:true});
   $('peak-table').innerHTML=[...data.data].sort((a,b)=>b.prediction_mw-a.prediction_mw).slice(0,5).map(r=>`<tr><td>${esc(date(r.timestamp_utc))}</td><td><strong>${num(r.prediction_mw/1000,2)}</strong></td><td>${num(r.lower_mw/1000,2)}–${num(r.upper_mw/1000,2)}</td><td>${num(r.temperature_c)} °C</td><td>${num(r.workday_fraction*100,0)}%</td></tr>`).join('');
   $('forecast-notes').innerHTML=data.meta.warnings.map(w=>`<div class="note">${esc(w)}</div>`).join('');
 }
