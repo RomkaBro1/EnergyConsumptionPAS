@@ -14,6 +14,22 @@ with sync_playwright() as p:
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto("http://127.0.0.1:8050", wait_until="networkidle")
     page.locator("#kpi-load").filter(has_text="ГВт").wait_for(timeout=120000)
+    # Check every supported model/horizon against the chart's actual data and API totals.
+    for model, label in [("seasonal", "Недельный профиль"), ("boosting", "Градиентный бустинг")]:
+        page.locator("#overview-model").select_option(model)
+        for hours in (24, 72, 168):
+            page.locator("#overview-horizon").select_option(str(hours))
+            expect(page.locator("#overview-panel")).to_have_attribute("aria-busy", "false", timeout=60000)
+            expect(page.locator("#overview-forecast-label")).to_have_text(f"{label} · {hours} ч")
+            expect(page.locator("#kpi-energy-label")).to_have_text(f"Энергия · следующие {hours} ч")
+            expect(page.locator("#temperature-period")).to_have_text(f"на следующие {hours} ч")
+            assert page.evaluate("() => state.charts.get('overview-chart').rows.filter(r => r.prediction != null).length") == hours
+            assert page.evaluate("() => document.querySelector('#kpi-energy').textContent === num(state.overviewForecast.summary.energy_mwh/1000,0)+'ГВт·ч'")
+            assert page.evaluate("() => document.querySelector('#kpi-error').textContent === num(state.overviewForecast.meta.metrics.mape_pct,2)+'%'")
+    page.locator('#history-controls [data-days="7"]').click()
+    expect(page.locator("#overview-panel")).to_have_attribute("aria-busy", "false", timeout=60000)
+    assert page.evaluate("() => state.charts.get('overview-chart').rows.filter(r => 'actual' in r).length") == 168
+    expect(page.locator("#overview-horizon")).to_have_value("168")
     page.screenshot(path=str(OUT / "overview-desktop.png"), full_page=True)
     page.locator('[data-view="forecast"]').click()
     page.locator("#peak-table tr").first.wait_for()
@@ -40,6 +56,8 @@ with sync_playwright() as p:
     page.set_viewport_size({"width": 390, "height": 844})
     page.locator('[data-view="overview"]').click()
     page.wait_for_timeout(500)
+    expect(page.locator("#overview-horizon")).to_have_value("168")
+    expect(page.locator("#overview-model")).to_have_value("boosting")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "Mobile horizontal overflow"
     page.screenshot(path=str(OUT / "overview-mobile.png"), full_page=True)
     assert not errors, errors

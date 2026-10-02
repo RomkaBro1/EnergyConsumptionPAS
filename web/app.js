@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
-const state = {view: 'overview', hours: 24, days: 2, model: 'boosting', delta: 0, ready: false, busy: false, charts: new Map()};
+const state = {view: 'overview', hours: 24, days: 2, model: 'boosting', overviewHours: 24, overviewModel: 'boosting', delta: 0, ready: false, busy: false, charts: new Map()};
 const labels = {boosting: 'Градиентный бустинг', seasonal: 'Недельный профиль'};
 const views = {
   overview: ['МОНИТОРИНГ · ГЕРМАНИЯ', 'Энергия в перспективе', 'Потребление, погода и календарь — в единой картине.', 'Обзор системы'],
@@ -69,23 +69,45 @@ function showView(name){state.view=name;document.querySelectorAll('.nav-item').f
 function forecastRows(data){return data.map(r=>({...r,prediction:r.prediction_mw/1000,baseline:r.baseline_mw/1000,lower:r.lower_mw/1000,upper:r.upper_mw/1000}));}
 
 async function loadOverview(){
-  const [history, forecast, week] = await Promise.all([api(`/api/history?days=${state.days}`),api('/api/forecast?hours=24'),api('/api/forecast?hours=168')]);
-  state.overviewForecast=forecast;
-  $('actual-date').textContent=fullDate(history.summary.last_actual);
-  $('kpi-load').innerHTML=`${num(history.summary.latest_mw/1000)}<small>ГВт</small>`;
-  $('kpi-load-date').textContent=date(history.summary.last_actual);
-  $('kpi-peak').innerHTML=`${num(forecast.summary.peak_mw/1000)}<small>ГВт</small>`;
-  $('kpi-peak-date').textContent=date(forecast.summary.peak_at);
-  $('kpi-energy').innerHTML=`${num(forecast.summary.energy_mwh/1000,0)}<small>ГВт·ч</small>`;
-  $('kpi-error').innerHTML=`${num(forecast.meta.metrics.mape_pct,2)}<small>%</small>`;
-  $('temperature').textContent=`${num(forecast.summary.temperature_mean)} °C`;
-  const rows=[...history.data.map(r=>({timestamp_utc:r.timestamp_utc,actual:r.load_mean_mw==null?null:r.load_mean_mw/1000})),...forecastRows(forecast.data)].sort((a,b)=>+new Date(a.timestamp_utc)-+new Date(b.timestamp_utc));
-  new Chart('overview-chart',rows,[{key:'actual',color:'#119e90',label:'Факт'},{key:'prediction',color:'#8272d5',label:'Прогноз',dash:[5,4]}],{band:true,boundary:forecast.data[0].timestamp_utc});
-  new Chart('weather-chart',forecast.data,[{key:'temperature_c',color:'#d7a052',label:'Температура',width:2}],{unit:'°C',negative:true});
-  const warnings=forecast.meta.warnings.filter(w=>!w.startsWith('90%'));
-  $('insights').innerHTML=`<div class="insight"><div class="insight-mark">↗</div><div><h3>Пик спроса — ${esc(date(forecast.summary.peak_at))}</h3><p>Ожидается ${num(forecast.summary.peak_mw/1000)} ГВт. Учитывайте верхнюю границу интервала при оценке потребности в мощности.</p></div></div><div class="insight violet"><div class="insight-mark">◈</div><div><h3>Погодный прогноз доступен для ${num(forecast.summary.weather_coverage_pct,0)}% часов</h3><p>Температура, ветер и солнечная энергия используются вместе с календарём и историей нагрузки.</p></div></div><div class="insight amber"><div class="insight-mark">${warnings.length?'!':'✓'}</div><div><h3>${warnings.length?'Условия использования прогноза':'Интервал неопределённости'}</h3><p>${esc(warnings[0]||'Диапазон отражает прошлые ошибки модели. Это не гарантированные границы будущей нагрузки.')}</p></div></div>`;
-  const days = new Map(); week.data.forEach(r=>{const key=r.datetime_local.slice(0,10);if(!days.has(key))days.set(key,r);});
-  $('week-calendar').innerHTML=[...days.values()].slice(0,7).map(r=>{const dt=new Date(r.timestamp_utc),weekday=new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Berlin',weekday:'short'}).format(dt),weekend=['Sat','Sun'].includes(weekday),holiday=!!r.holiday_name,css=holiday?'holiday':weekend?'weekend':'';return `<div class="day-card ${css}" title="${esc(r.holiday_name||'Доля земель с рабочим днём: '+num(r.workday_fraction*100,0)+'%')}"><div class="day-name">${esc(new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Berlin',weekday:'short'}).format(dt).toUpperCase())}</div><div class="day-date">${esc(new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Berlin',day:'2-digit',month:'short'}).format(dt))}</div><div class="day-type">${holiday?'Праздник':weekend?'Выходной':'Рабочий день'}</div><div class="day-bar"><i style="width:${Math.round(r.workday_fraction*100)}%"></i></div></div>`;}).join('');
+  const token=Symbol();state.overviewToken=token;
+  const hours=state.overviewHours, model=state.overviewModel;
+  $('overview-panel').setAttribute('aria-busy','true');
+  $('overview-status').textContent='Обновляем график…';
+  try {
+    const forecastRequest=api('/api/forecast?'+new URLSearchParams({hours,model}));
+    const [history, forecast, week] = await Promise.all([api(`/api/history?days=${state.days}`),forecastRequest,hours===168?forecastRequest:api('/api/forecast?hours=168')]);
+    // A slow response for an older selection must not replace the user's latest choice.
+    if(state.overviewToken!==token)return;
+    state.overviewForecast=forecast;
+    $('overview-forecast-label').textContent=`${forecast.meta.model_label} · ${hours} ч`;
+    $('kpi-peak-label').textContent=`Ожидаемый пик · ${hours} ч`;
+    $('kpi-energy-label').textContent=`Энергия · следующие ${hours} ч`;
+    $('temperature-period').textContent=`на следующие ${hours} ч`;
+    $('insights-period').textContent=`Поддержка планирования на следующие ${hours} ч`;
+    $('overview-status').textContent=`${forecast.meta.model_label} · ${date(forecast.data[0].timestamp_utc)} — ${date(forecast.data.at(-1).timestamp_utc)}`;
+    $('actual-date').textContent=fullDate(history.summary.last_actual);
+    $('kpi-load').innerHTML=`${num(history.summary.latest_mw/1000)}<small>ГВт</small>`;
+    $('kpi-load-date').textContent=date(history.summary.last_actual);
+    $('kpi-peak').innerHTML=`${num(forecast.summary.peak_mw/1000)}<small>ГВт</small>`;
+    $('kpi-peak-date').textContent=date(forecast.summary.peak_at);
+    $('kpi-energy').innerHTML=`${num(forecast.summary.energy_mwh/1000,0)}<small>ГВт·ч</small>`;
+    $('kpi-error').innerHTML=`${num(forecast.meta.metrics.mape_pct,2)}<small>%</small>`;
+    $('temperature').textContent=`${num(forecast.summary.temperature_mean)} °C`;
+    const rows=[...history.data.map(r=>({timestamp_utc:r.timestamp_utc,actual:r.load_mean_mw==null?null:r.load_mean_mw/1000})),...forecastRows(forecast.data)].sort((a,b)=>+new Date(a.timestamp_utc)-+new Date(b.timestamp_utc));
+    new Chart('overview-chart',rows,[{key:'actual',color:'#119e90',label:'Факт'},{key:'prediction',color:'#8272d5',label:'Прогноз',dash:[5,4]}],{band:true,boundary:forecast.data[0].timestamp_utc});
+    new Chart('weather-chart',forecast.data,[{key:'temperature_c',color:'#d7a052',label:'Температура',width:2}],{unit:'°C',negative:true});
+    const warnings=forecast.meta.warnings.filter(w=>!w.startsWith('90%'));
+    const weatherNote=model==='boosting'?'Температура, ветер и солнечная энергия используются вместе с календарём и историей нагрузки.':'Недельный профиль использует историю нагрузки. Погода показана для справки и не влияет на эту модель.';
+    $('insights').innerHTML=`<div class="insight"><div class="insight-mark">↗</div><div><h3>Пик спроса — ${esc(date(forecast.summary.peak_at))}</h3><p>Ожидается ${num(forecast.summary.peak_mw/1000)} ГВт. Учитывайте верхнюю границу интервала при оценке потребности в мощности.</p></div></div><div class="insight violet"><div class="insight-mark">◈</div><div><h3>Погодный прогноз доступен для ${num(forecast.summary.weather_coverage_pct,0)}% часов</h3><p>${weatherNote}</p></div></div><div class="insight amber"><div class="insight-mark">${warnings.length?'!':'✓'}</div><div><h3>${warnings.length?'Условия использования прогноза':'Интервал неопределённости'}</h3><p>${esc(warnings[0]||'Диапазон отражает прошлые ошибки модели. Это не гарантированные границы будущей нагрузки.')}</p></div></div>`;
+    const days = new Map(); week.data.forEach(r=>{const key=r.datetime_local.slice(0,10);if(!days.has(key))days.set(key,r);});
+    $('week-calendar').innerHTML=[...days.values()].slice(0,7).map(r=>{const dt=new Date(r.timestamp_utc),weekday=new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Berlin',weekday:'short'}).format(dt),weekend=['Sat','Sun'].includes(weekday),holiday=!!r.holiday_name,css=holiday?'holiday':weekend?'weekend':'';return `<div class="day-card ${css}" title="${esc(r.holiday_name||'Доля земель с рабочим днём: '+num(r.workday_fraction*100,0)+'%')}"><div class="day-name">${esc(new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Berlin',weekday:'short'}).format(dt).toUpperCase())}</div><div class="day-date">${esc(new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Berlin',day:'2-digit',month:'short'}).format(dt))}</div><div class="day-type">${holiday?'Праздник':weekend?'Выходной':'Рабочий день'}</div><div class="day-bar"><i style="width:${Math.round(r.workday_fraction*100)}%"></i></div></div>`;}).join('');
+  } catch(e) {
+    if(state.overviewToken!==token)return;
+    $('overview-status').textContent='Не удалось обновить график. Показаны предыдущие данные; повторите выбор параметров.';
+    throw e;
+  } finally {
+    if(state.overviewToken===token)$('overview-panel').setAttribute('aria-busy','false');
+  }
 }
 
 async function loadForecast(){
@@ -140,6 +162,14 @@ document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=
 $('refresh').addEventListener('click',()=>startJob('refresh'));
 $('retrain').addEventListener('click',()=>startJob('train'));
 $('history-controls').addEventListener('click',async event=>{const b=event.target.closest('[data-days]');if(!b)return;state.days=Number(b.dataset.days);$('history-controls').querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x===b));try{await loadOverview();}catch(e){error(e.message);}});
+for(const id of ['overview-model','overview-horizon']){
+  $(id).addEventListener('change',async()=>{
+    state.overviewModel=$('overview-model').value;
+    state.overviewHours=Number($('overview-horizon').value);
+    error('');
+    try{await loadOverview();}catch(e){error(e.message);}
+  });
+}
 $('horizon-controls').addEventListener('click',async event=>{const b=event.target.closest('[data-hours]');if(!b)return;state.hours=Number(b.dataset.hours);$('horizon-controls').querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x===b));try{await loadForecast();}catch(e){error(e.message);}});
 $('temperature-delta').addEventListener('input',event=>{$('delta-value').textContent=(Number(event.target.value)>0?'+':'')+event.target.value+' °C';});
 $('apply-scenario').addEventListener('click',async()=>{state.model=$('model-select').value;state.delta=Number($('temperature-delta').value);$('apply-scenario').disabled=true;try{await loadForecast();toast('Сценарий рассчитан');}catch(e){error(e.message);}finally{$('apply-scenario').disabled=false;}});
