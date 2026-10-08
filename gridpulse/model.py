@@ -10,6 +10,7 @@ from threadpoolctl import threadpool_limits
 
 from .calendar import calendar_days
 from .data import WEATHER
+from .explain import explain_forecast
 from .storage import atomic_write, digest, now
 
 VERSION = "hgb-weather-calendar-v1"
@@ -185,6 +186,12 @@ def predict(store, frame, hours=24, model_name="boosting", temperature_delta=0, 
     weather = weather_for(history, idx, store.frame("weather_forecast"), as_of)
     weather["temperature_c"] += temperature_delta
     x = features(history, idx, weather, cal)
+    reference_weather = weather_for(history, idx, None, as_of)
+    reference = features(history, idx, reference_weather, cal)
+    reference["weekday"] = 1  # Ordinary Tuesday, no holidays, all states working.
+    reference["holiday"] = 0
+    reference["workday_fraction"] = 1
+    explanation = explain_forecast(bundle["model"], x, reference, model_name)
     with threadpool_limits(limits=2):
         predicted = bundle["model"].predict(x) if model_name == "boosting" else x.lag_168.to_numpy()
     q = bundle["intervals"][model_name]
@@ -217,4 +224,5 @@ def predict(store, frame, hours=24, model_name="boosting", temperature_delta=0, 
     warnings.append("90% — номинальный интервал, откалиброванный по прошлым ошибкам; фактическое покрытие смотрите в разделе моделей.")
     return output, {"model": model_name, "model_label": LABELS[model_name], "issued_at": as_of.isoformat(),
                     "last_actual": latest.isoformat(), "model_sha256": report["model_sha256"], "warnings": warnings,
-                    "temperature_delta": temperature_delta, "metrics": report["models"][model_name]}
+                    "temperature_delta": temperature_delta, "metrics": report["models"][model_name],
+                    "explanation": explanation}

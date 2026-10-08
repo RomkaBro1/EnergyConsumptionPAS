@@ -72,6 +72,31 @@ function showView(name){state.view=name;document.querySelectorAll('.nav-item').f
 
 function forecastRows(data){return data.map(r=>({...r,prediction:r.prediction_mw/1000,baseline:r.baseline_mw/1000,lower:r.lower_mw/1000,upper:r.upper_mw/1000}));}
 
+function contributionPercent(value){
+  if(value==null)return '—';
+  if(Math.abs(value)<.005)return '0,00%';
+  return `${value>0?'+':'−'}${num(Math.abs(value),2)}%`;
+}
+function renderInfluence(forecast,week){
+  const explanation=forecast.meta.explanation, weekly=week.meta.explanation;
+  const row=(label,value)=>`<div class="influence-row"><span>${label}</span><strong>${contributionPercent(value)}</strong></div>`;
+  $('weather-influence-title').textContent=`Вклад в прогноз энергии · ${explanation.hours} ч`;
+  $('weather-influence').innerHTML=[['temperature','Температура'],['wind','Скорость ветра'],['solar','Солнечная энергия']].map(([key,label])=>row(label,explanation.contribution_pct[key])).join('');
+  $('weather-influence-note').textContent=forecast.meta.model==='seasonal'
+    ? 'Прямой вклад — 0%: недельный профиль повторяет нагрузку прошлой недели и не использует погоду.'
+    : 'Относительно рабочего вторника с типичной сезонной погодой. «+» повышает прогноз, «−» снижает. Если вместо DWD используется сезонный профиль, вклад соответствующей погоды равен 0%.';
+  $('calendar-influence').innerHTML=row(`День недели, праздники и рабочие земли · ${explanation.hours} ч`,explanation.contribution_pct.calendar);
+  $('calendar-influence-note').textContent=forecast.meta.model==='seasonal'
+    ? 'Прямой вклад календаря — 0%: модель берёт нагрузку прошлой недели, в которой уже отражён её календарный ритм.'
+    : 'Календарные признаки оцениваются вместе, поскольку связаны между собой. Сравнение — обычный рабочий вторник без праздников; метод и знаменатель описаны в блоке «Погода». В карточках показан вклад за доступные часы каждого дня в ближайшие 168 ч, включая неполные дни.';
+  [...$('week-calendar').children].forEach((card,i)=>{
+    const day=Object.values(weekly.days)[i];
+    const value=document.createElement('div');value.className='day-influence';
+    value.innerHTML=`${contributionPercent(day.contribution_pct.calendar)}<small>вклад календаря · ${day.hours} ч</small>`;
+    card.append(value);
+  });
+}
+
 async function loadOverview(){
   const token=Symbol();state.overviewToken=token;
   const hours=state.overviewHours, model=state.overviewModel;
@@ -79,7 +104,7 @@ async function loadOverview(){
   $('overview-status').textContent='Обновляем график…';
   try {
     const forecastRequest=api('/api/forecast?'+new URLSearchParams({hours,model}));
-    const [history, forecast, week] = await Promise.all([api(`/api/history?days=${state.days}`),forecastRequest,hours===168?forecastRequest:api('/api/forecast?hours=168')]);
+    const [history, forecast, week] = await Promise.all([api(`/api/history?days=${state.days}`),forecastRequest,hours===168?forecastRequest:api('/api/forecast?'+new URLSearchParams({hours:168,model}))]);
     // A slow response for an older selection must not replace the user's latest choice.
     if(state.overviewToken!==token)return;
     state.overviewForecast=forecast;
@@ -95,7 +120,6 @@ async function loadOverview(){
     $('kpi-peak').innerHTML=`${num(forecast.summary.peak_mw/1000)}<small>ГВт</small>`;
     $('kpi-peak-date').textContent=date(forecast.summary.peak_at);
     $('kpi-energy').innerHTML=`${num(forecast.summary.energy_mwh/1000,0)}<small>ГВт·ч</small>`;
-    $('kpi-error').innerHTML=`${num(forecast.meta.metrics.mape_pct,2)}<small>%</small>`;
     $('temperature').textContent=`${num(forecast.summary.temperature_mean)} °C`;
     const rows=[...history.data.map(r=>({timestamp_utc:r.timestamp_utc,actual:r.load_mean_mw==null?null:r.load_mean_mw/1000})),...forecastRows(forecast.data)].sort((a,b)=>+new Date(a.timestamp_utc)-+new Date(b.timestamp_utc));
     new Chart('overview-chart',rows,[{key:'actual',color:'#66c5b6',label:'Факт'},{key:'prediction',color:'#b0a4ee',label:'Прогноз',dash:[5,4]}],{band:true,boundary:forecast.data[0].timestamp_utc});
@@ -105,6 +129,7 @@ async function loadOverview(){
     $('insights').innerHTML=`<div class="insight"><div class="insight-mark">↗</div><div><h3>Пик спроса — ${esc(date(forecast.summary.peak_at))}</h3><p>Ожидается ${num(forecast.summary.peak_mw/1000)} ГВт. Учитывайте верхнюю границу интервала при оценке потребности в мощности.</p></div></div><div class="insight violet"><div class="insight-mark">◈</div><div><h3>Погодный прогноз доступен для ${num(forecast.summary.weather_coverage_pct,0)}% часов</h3><p>${weatherNote}</p></div></div><div class="insight amber"><div class="insight-mark">${warnings.length?'!':'✓'}</div><div><h3>${warnings.length?'Условия использования прогноза':'Интервал неопределённости'}</h3><p>${esc(warnings[0]||'Диапазон отражает прошлые ошибки модели. Это не гарантированные границы будущей нагрузки.')}</p></div></div>`;
     const days = new Map(); week.data.forEach(r=>{const key=r.datetime_local.slice(0,10);if(!days.has(key))days.set(key,r);});
     $('week-calendar').innerHTML=[...days.values()].slice(0,7).map(r=>{const dt=new Date(r.timestamp_utc),weekday=new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Berlin',weekday:'short'}).format(dt),weekend=['Sat','Sun'].includes(weekday),holiday=!!r.holiday_name,css=holiday?'holiday':weekend?'weekend':'';return `<div class="day-card ${css}" title="${esc(r.holiday_name||'Доля земель с рабочим днём: '+num(r.workday_fraction*100,0)+'%')}"><div class="day-name">${esc(new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Berlin',weekday:'short'}).format(dt).toUpperCase())}</div><div class="day-date">${esc(new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Berlin',day:'2-digit',month:'short'}).format(dt))}</div><div class="day-type">${holiday?'Праздник':weekend?'Выходной':'Рабочий день'}</div><div class="day-bar"><i style="width:${Math.round(r.workday_fraction*100)}%"></i></div></div>`;}).join('');
+    renderInfluence(forecast,week);
   } catch(e) {
     if(state.overviewToken!==token)return;
     $('overview-status').textContent='Не удалось обновить график. Показаны предыдущие данные; повторите выбор параметров.';
@@ -165,7 +190,7 @@ async function startJob(kind){try{await api(`/api/jobs/${kind}`,{method:'POST',h
 document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
 $('refresh').addEventListener('click',()=>startJob('refresh'));
 $('retrain').addEventListener('click',()=>startJob('train'));
-$('history-controls').addEventListener('click',async event=>{const b=event.target.closest('[data-days]');if(!b)return;state.days=Number(b.dataset.days);$('history-controls').querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x===b));try{await loadOverview();}catch(e){error(e.message);}});
+$('overview-history').addEventListener('change',async event=>{state.days=Number(event.target.value);error('');try{await loadOverview();}catch(e){error(e.message);}});
 for(const id of ['overview-model','overview-horizon']){
   $(id).addEventListener('change',async()=>{
     state.overviewModel=$('overview-model').value;

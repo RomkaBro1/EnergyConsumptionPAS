@@ -25,8 +25,17 @@ with sync_playwright() as p:
             expect(page.locator("#temperature-period")).to_have_text(f"на следующие {hours} ч")
             assert page.evaluate("() => state.charts.get('overview-chart').rows.filter(r => r.prediction != null).length") == hours
             assert page.evaluate("() => document.querySelector('#kpi-energy').textContent === num(state.overviewForecast.summary.energy_mwh/1000,0)+'ГВт·ч'")
-            assert page.evaluate("() => document.querySelector('#kpi-error').textContent === num(state.overviewForecast.meta.metrics.mape_pct,2)+'%'")
-    page.locator('#history-controls [data-days="7"]').click()
+            assert page.locator('#kpi-error').count() == 0
+            assert page.locator('#weather-influence .influence-row').count() == 3
+            assert page.evaluate("() => document.querySelector('#weather-influence strong').textContent === contributionPercent(state.overviewForecast.meta.explanation.contribution_pct.temperature)")
+            if model == 'seasonal':
+                expect(page.locator('#calendar-influence strong')).to_have_text('0,00%')
+                assert all(value == '0,00%' for value in page.locator('#weather-influence strong').all_text_contents())
+    peak = page.locator('.kpi-peak-card').bounding_box()
+    load = page.locator('#kpi-load').locator('..').bounding_box()
+    assert peak['width'] > load['width'] and peak['height'] > load['height']
+    assert peak['x'] < load['x']
+    page.locator('#overview-history').select_option('7')
     expect(page.locator("#overview-panel")).to_have_attribute("aria-busy", "false", timeout=60000)
     assert page.evaluate("() => state.charts.get('overview-chart').rows.filter(r => 'actual' in r).length") == 168
     expect(page.locator("#overview-horizon")).to_have_value("168")
