@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
-const state = {view: 'overview', hours: 24, days: 2, model: 'boosting', overviewHours: 24, overviewModel: 'boosting', delta: 0, ready: false, busy: false, charts: new Map()};
+const state = {view: 'overview', hours: 24, days: 2, model: 'boosting', overviewHours: 24, overviewModel: 'boosting', delta: 0, windDelta: 0, solarDelta: 0, ready: false, busy: false, charts: new Map()};
 const labels = {boosting: 'Градиентный бустинг', seasonal: 'Недельный профиль'};
 const views = {
   overview: ['МОНИТОРИНГ · ГЕРМАНИЯ', 'Мониторинг электропотребления', 'Нагрузка энергосистемы Германии, погода и календарь.', 'Обзор системы'],
@@ -13,7 +13,8 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 const num = (v, digits = 1) => v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('ru-RU', {minimumFractionDigits: digits, maximumFractionDigits: digits});
 const date = (v, opts = {}) => v ? new Intl.DateTimeFormat('ru-RU', {timeZone: 'Europe/Berlin', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', ...opts}).format(new Date(v)) : '—';
 const fullDate = v => date(v, {year:'numeric', timeZoneName:'shortOffset'});
-const query = () => new URLSearchParams({hours:state.hours, model:state.model, temperature_delta:state.delta});
+const query = () => new URLSearchParams({hours:state.hours, model:state.model, temperature_delta:state.delta, wind_delta:state.windDelta, solar_delta_pct:state.solarDelta});
+const signedValue = (value,unit) => `${value>0?'+':''}${num(value,Number.isInteger(Number(value))?0:1)}${unit}`;
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
@@ -142,7 +143,7 @@ async function loadOverview(){
 async function loadForecast(){
   const token=Symbol();state.forecastToken=token;
   const data=await api('/api/forecast?'+query());if(state.forecastToken!==token)return;
-  $('forecast-issued').textContent=`${data.meta.model_label} · рассчитан ${date(data.meta.issued_at)}`;
+  $('forecast-issued').textContent=`${data.meta.model_label} · рассчитан ${date(data.meta.issued_at)} · температура ${signedValue(data.meta.temperature_delta,' °C')}, ветер ${signedValue(data.meta.wind_delta,' м/с')}, солнце ${signedValue(data.meta.solar_delta_pct,'%')}`;
   $('forecast-range').textContent=`${date(data.data[0].timestamp_utc)} — ${date(data.data.at(-1).timestamp_utc)} · время Германии`;
   $('forecast-export').href='/api/export/forecast?'+query();
   $('scenario-peak').textContent=num(data.summary.peak_mw/1000)+' ГВт';
@@ -200,9 +201,12 @@ for(const id of ['overview-model','overview-horizon']){
   });
 }
 $('horizon-controls').addEventListener('click',async event=>{const b=event.target.closest('[data-hours]');if(!b)return;state.hours=Number(b.dataset.hours);$('horizon-controls').querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x===b));try{await loadForecast();}catch(e){error(e.message);}});
-$('temperature-delta').addEventListener('input',event=>{$('delta-value').textContent=(Number(event.target.value)>0?'+':'')+event.target.value+' °C';});
-$('apply-scenario').addEventListener('click',async()=>{state.model=$('model-select').value;state.delta=Number($('temperature-delta').value);$('apply-scenario').disabled=true;try{await loadForecast();toast('Сценарий рассчитан');}catch(e){error(e.message);}finally{$('apply-scenario').disabled=false;}});
-$('reset-scenario').addEventListener('click',()=>{$('model-select').value='boosting';$('temperature-delta').value='0';$('delta-value').textContent='0 °C';state.model='boosting';state.delta=0;loadForecast().catch(e=>error(e.message));});
+const scenarioInputs=[['temperature-delta','delta-value','delta',' °C'],['wind-delta','wind-value','windDelta',' м/с'],['solar-delta','solar-value','solarDelta','%']];
+for(const [input,label,,unit] of scenarioInputs){
+  $(input).addEventListener('input',event=>{$(label).textContent=signedValue(Number(event.target.value),unit);});
+}
+$('apply-scenario').addEventListener('click',async()=>{state.model=$('model-select').value;for(const [input,,key] of scenarioInputs)state[key]=Number($(input).value);$('apply-scenario').disabled=true;error('');try{await loadForecast();toast('Сценарий рассчитан');}catch(e){error(e.message);}finally{$('apply-scenario').disabled=false;}});
+$('reset-scenario').addEventListener('click',()=>{$('model-select').value='boosting';state.model='boosting';for(const [input,label,key,unit] of scenarioInputs){$(input).value='0';$(label).textContent=signedValue(0,unit);state[key]=0;}error('');loadForecast().catch(e=>error(e.message));});
 $('lineage-button').addEventListener('click',async()=>{try{const data=await api('/api/lineage');const originals=data.origin.upstream||[data.origin];$('lineage-content').innerHTML=`<div class="lineage-steps">${data.steps.map((s,i)=>`<div class="lineage-step"><b>0${i+1}</b><p>${esc(s)}</p></div>`).join('')}</div><p>Выбранный час: <b>${esc(fullDate(data.origin.timestamp_utc))}</b></p><p>SHA-256 записи / импортированного файла: <code>${esc(data.origin.raw_sha256)}</code></p>`+originals.slice(0,4).map(r=>`<p>Источник ${esc(date(r.timestamp_utc))}<br><code>${esc(r.raw_sha256)}</code><br><code>${esc(r.source_url)}</code><br><a href="/api/raw/${encodeURIComponent(r.raw_sha256)}">Скачать исходный ответ ↗</a></p>`).join('');}catch(e){error(e.message);}});
 let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>state.charts.forEach(c=>c.draw()),100);});
 window.addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(views[v]&&v!==state.view)showView(v);});

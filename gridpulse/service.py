@@ -4,13 +4,13 @@ import threading
 import re
 from datetime import datetime
 
-import numpy as np
 import pandas as pd
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 from .config import BASE
 from .data import read_mart
 from .model import LABELS, predict
+from .scenario import validate_scenario
 from .pipeline import run_pipeline
 from .storage import Store, now
 
@@ -44,14 +44,16 @@ class Engine:
         threading.Thread(target=work, daemon=True, name="gridpulse-pipeline").start()
         return True
 
-    def forecast(self, hours, name, delta):
+    def forecast(self, hours, name, delta, wind_delta=0, solar_delta_pct=0):
         manifest = self.store.root / "models/latest.json"
         if not manifest.exists():
             raise ValueError("Модель ещё не готова. Дождитесь завершения подготовки данных.")
-        key = (hours, name, delta, pd.Timestamp.now(tz="UTC").floor("h").isoformat(), manifest.stat().st_mtime_ns)
+        key = (hours, name, delta, wind_delta, solar_delta_pct, pd.Timestamp.now(tz="UTC").floor("h").isoformat(), manifest.stat().st_mtime_ns)
         if key not in self.cache:
-            value = predict(self.store, read_mart(self.store), hours, name, delta)
+            value = predict(self.store, read_mart(self.store), hours, name, delta,
+                            wind_delta=wind_delta, solar_delta_pct=solar_delta_pct)
             self.cache = {key: value}
+            return value
         return self.cache[key]
 
     def schedule(self):
@@ -115,9 +117,12 @@ def create_app(cfg, initialize=False):
         hours = int(request.args.get("hours", 24))
         name = request.args.get("model", "boosting")
         delta = float(request.args.get("temperature_delta", 0))
-        if hours not in (24, 72, 168) or name not in LABELS or not np.isfinite(delta) or not -10 <= delta <= 10:
-            raise ValueError("Допустимы горизонты 24/72/168 ч и изменение температуры от −10 до +10 °C")
-        return hours, name, delta
+        wind_delta = float(request.args.get("wind_delta", 0))
+        solar_delta_pct = float(request.args.get("solar_delta_pct", 0))
+        if hours not in (24, 72, 168) or name not in LABELS:
+            raise ValueError("Допустимы горизонты 24/72/168 ч и модели boosting/seasonal")
+        validate_scenario(delta, wind_delta, solar_delta_pct)
+        return hours, name, delta, wind_delta, solar_delta_pct
 
     @app.get("/api/forecast")
     def forecast():
@@ -202,7 +207,8 @@ def create_app(cfg, initialize=False):
         if kind == "forecast":
             f, meta = engine.forecast(*forecast_params())
             f = f.reset_index().assign(model=meta["model"], issued_at=meta["issued_at"],
-                                        model_sha256=meta["model_sha256"], temperature_delta=meta["temperature_delta"])
+                                        model_sha256=meta["model_sha256"], temperature_delta=meta["temperature_delta"],
+                                        wind_delta=meta["wind_delta"], solar_delta_pct=meta["solar_delta_pct"])
             data = f.to_csv(index=False).encode("utf-8-sig")
         elif kind in ("history", "validation"):
             filename = "hourly.csv" if kind == "history" else "validation.csv"

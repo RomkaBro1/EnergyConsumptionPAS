@@ -1,6 +1,7 @@
 """Browser acceptance test using an installed Edge; no external CDN is needed."""
 import json
 import re
+import csv
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, expect
@@ -44,15 +45,32 @@ with sync_playwright() as p:
     page.locator("#peak-table tr").first.wait_for()
     page.locator('[data-hours="168"]').click()
     page.wait_for_timeout(1000)
-    page.locator("#temperature-delta").fill("5")
+    page.locator("#temperature-delta").fill("40")
+    page.locator("#wind-delta").fill("-30")
+    page.locator("#solar-delta").fill("300")
     page.locator("#apply-scenario").click()
-    expect(page.locator('#forecast-export')).to_have_attribute('href', re.compile('temperature_delta=5'), timeout=60000)
+    expect(page.locator('#forecast-export')).to_have_attribute('href', re.compile('temperature_delta=40&wind_delta=-30&solar_delta_pct=300'), timeout=60000)
+    expect(page.locator('#delta-value')).to_have_text('+40 °C')
+    expect(page.locator('#wind-value')).to_have_text('-30 м/с')
+    expect(page.locator('#solar-value')).to_have_text('+300%')
     assert page.locator("#peak-table tr").count() == 5
     with page.expect_download() as download:
         page.locator("#forecast-export").click()
     download.value.save_as(str(OUT / "forecast-scenario.csv"))
     assert len((OUT / "forecast-scenario.csv").read_text(encoding="utf-8-sig").splitlines()) == 169
+    with (OUT / 'forecast-scenario.csv').open(encoding='utf-8-sig', newline='') as file:
+        exported = list(csv.DictReader(file))
+    assert all(float(row['wind_delta']) == -30 and float(row['solar_delta_pct']) == 300 for row in exported)
+    assert all(float(row['wind_speed_ms']) >= 0 and float(row['solar_energy_wh_m2']) >= 0 for row in exported)
     page.screenshot(path=str(OUT / "forecast-desktop.png"), full_page=True)
+    page.set_viewport_size({'width': 390, 'height': 844})
+    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Scenario mobile overflow'
+    page.screenshot(path=str(OUT / 'forecast-mobile.png'), full_page=True)
+    page.set_viewport_size({'width': 1440, 'height': 1100})
+    page.locator('#reset-scenario').click()
+    expect(page.locator('#forecast-export')).to_have_attribute('href', re.compile('temperature_delta=0&wind_delta=0&solar_delta_pct=0'), timeout=60000)
+    for slider in ('temperature-delta', 'wind-delta', 'solar-delta'):
+        expect(page.locator('#' + slider)).to_have_value('0')
     page.locator('[data-view="models"]').click()
     assert page.locator("#model-cards .model-card").count() == 2
     assert page.locator("#horizon-table tr").count() == 6

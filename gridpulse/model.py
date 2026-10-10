@@ -11,6 +11,7 @@ from threadpoolctl import threadpool_limits
 from .calendar import calendar_days
 from .data import WEATHER
 from .explain import explain_forecast
+from .scenario import apply_scenario
 from .storage import atomic_write, digest, now
 
 VERSION = "hgb-weather-calendar-v1"
@@ -173,7 +174,8 @@ def train(store, cfg, frame, run_id, progress=lambda msg: None):
     return report
 
 
-def predict(store, frame, hours=24, model_name="boosting", temperature_delta=0, as_of=None):
+def predict(store, frame, hours=24, model_name="boosting", temperature_delta=0, as_of=None,
+            wind_delta=0, solar_delta_pct=0):
     as_of = pd.Timestamp(as_of or now()).tz_convert("UTC")
     report = json.loads((store.root / "models/latest.json").read_text(encoding="utf-8"))
     raw = (store.root / "models" / (report["model_sha256"] + ".pkl")).read_bytes()
@@ -184,7 +186,7 @@ def predict(store, frame, hours=24, model_name="boosting", temperature_delta=0, 
     idx = pd.date_range(as_of.ceil("h"), periods=hours, freq="h")
     cal = pd.read_csv(store.root / "gold/calendar.csv")
     weather = weather_for(history, idx, store.frame("weather_forecast"), as_of)
-    weather["temperature_c"] += temperature_delta
+    weather = apply_scenario(weather, temperature_delta, wind_delta, solar_delta_pct)
     x = features(history, idx, weather, cal)
     reference_weather = weather_for(history, idx, None, as_of)
     reference = features(history, idx, reference_weather, cal)
@@ -217,12 +219,15 @@ def predict(store, frame, hours=24, model_name="boosting", temperature_delta=0, 
         warnings.append(f"Для {missing_weather} ч нет доступного прогноза DWD: используется сезонный погодный профиль.")
     if output.weather_stations.lt(7).any():
         warnings.append("Покрытие погоды менее 7 станций в части часов; среднее рассчитано по доступным станциям.")
-    if temperature_delta:
-        warnings.append("Температурный сценарий показывает чувствительность модели, а не причинный эффект.")
-    if model_name == "seasonal" and temperature_delta:
+    if temperature_delta or wind_delta or solar_delta_pct:
+        warnings.append("Погодный сценарий показывает чувствительность модели, а не причинный эффект. Экстремальные условия могут выходить за диапазон обучения модели.")
+    if wind_delta < 0:
+        warnings.append("После изменения сценария скорость ветра ограничена снизу нулём.")
+    if model_name == "seasonal" and (temperature_delta or wind_delta or solar_delta_pct):
         warnings.append("Недельный профиль не зависит от погодного сценария.")
     warnings.append("90% — номинальный интервал, откалиброванный по прошлым ошибкам; фактическое покрытие смотрите в разделе моделей.")
     return output, {"model": model_name, "model_label": LABELS[model_name], "issued_at": as_of.isoformat(),
                     "last_actual": latest.isoformat(), "model_sha256": report["model_sha256"], "warnings": warnings,
-                    "temperature_delta": temperature_delta, "metrics": report["models"][model_name],
+                    "temperature_delta": temperature_delta, "wind_delta": wind_delta,
+                    "solar_delta_pct": solar_delta_pct, "metrics": report["models"][model_name],
                     "explanation": explanation}
