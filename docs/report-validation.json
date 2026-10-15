@@ -1,0 +1,110 @@
+{
+  "version": "hgb-weather-calendar-v1",
+  "created_at": "2026-10-08T18:43:51.008515+00:00",
+  "train_start": "2023-10-09 17:00:00+00:00",
+  "train_end": "2026-09-10 16:00:00+00:00",
+  "test_start": "2026-09-24T17:00:00+00:00",
+  "test_end": "2026-10-08T16:00:00+00:00",
+  "calibration_hours": 336,
+  "validation_scheme": "Fixed training cutoff, weekly origins; calibration first half, test second half",
+  "weather_note": "Только прогнозы погоды, выпущенные до начала окна; иначе сезонный профиль по прошлому. Фактическая будущая погода не используется.",
+  "weather_forecast_fraction": 0.5,
+  "models": {
+    "boosting": {
+      "mae_mw": 1624.229937580846,
+      "rmse_mw": 2136.0062110347285,
+      "mape_pct": 3.2024532719690955,
+      "n": 336,
+      "coverage_90_pct": 87.5,
+      "interval_halfwidth_mw": 3384.3934301621703
+    },
+    "seasonal": {
+      "mae_mw": 1654.8135416666669,
+      "rmse_mw": 2084.501830214455,
+      "mape_pct": 3.198668567033705,
+      "n": 336,
+      "coverage_90_pct": 89.88095238095238,
+      "interval_halfwidth_mw": 3300.8749999999927
+    }
+  },
+  "horizons": [
+    {
+      "model": "boosting",
+      "from": 1,
+      "to": 24,
+      "mae_mw": 2559.5945642694264,
+      "rmse_mw": 3026.9061312843737,
+      "mape_pct": 4.54873185093911,
+      "n": 48
+    },
+    {
+      "model": "boosting",
+      "from": 25,
+      "to": 72,
+      "mae_mw": 2190.6038812806555,
+      "rmse_mw": 2686.928050872975,
+      "mape_pct": 4.7850450956310295,
+      "n": 96
+    },
+    {
+      "model": "boosting",
+      "from": 73,
+      "to": 168,
+      "mae_mw": 1107.2018090587956,
+      "rmse_mw": 1443.6353682898548,
+      "mape_pct": 2.0745877153956243,
+      "n": 192
+    },
+    {
+      "model": "seasonal",
+      "from": 1,
+      "to": 24,
+      "mae_mw": 2376.7125000000005,
+      "rmse_mw": 2968.1927798114807,
+      "mape_pct": 4.2303784551819765,
+      "n": 48
+    },
+    {
+      "model": "seasonal",
+      "from": 25,
+      "to": 72,
+      "mae_mw": 1553.1614583333346,
+      "rmse_mw": 1936.4546001857966,
+      "mape_pct": 3.4546357158540286,
+      "n": 96
+    },
+    {
+      "model": "seasonal",
+      "from": 73,
+      "to": 168,
+      "mae_mw": 1525.16484375,
+      "rmse_mw": 1877.90800798957,
+      "mape_pct": 2.8127575205864748,
+      "n": 192
+    }
+  ],
+  "features": [
+    "hour",
+    "weekday",
+    "month",
+    "day_sin",
+    "day_cos",
+    "hour_sin",
+    "hour_cos",
+    "holiday",
+    "workday_fraction",
+    "lag_168",
+    "lag_336",
+    "temperature_c",
+    "wind_speed_ms",
+    "solar_energy_wh_m2",
+    "heating_degree",
+    "cooling_degree"
+  ],
+  "recommended_model": "boosting",
+  "model_sha256": "0f138254affaf7ca6272a730fd90227b9a3cd165eb44bcce9fa6c9756c089061",
+  "production_train_end": "2026-10-08 16:00:00+00:00",
+  "training_rows": 25944,
+  "train_days": 1095,
+  "input_sha256": "77c4ce605fa87ce78bdfd49028d0144333e7748acf8eeb640b76b9e45067a2e2"
+}

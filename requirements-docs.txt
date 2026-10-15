@@ -1,0 +1,4 @@
+-r requirements-dev.txt
+matplotlib==3.10.3
+Pillow==11.2.1
+PyMuPDF==1.26.5
